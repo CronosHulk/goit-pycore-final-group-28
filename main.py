@@ -1,7 +1,10 @@
 from collections import UserDict
 from datetime import datetime, timedelta
-import pickle
+import json
 import functools
+
+from config import ADDRESS_BOOK_PATH, NOTE_BOOK_PATH
+from notes import Note, NoteBook
 
 
 class Field:
@@ -33,6 +36,16 @@ class Birthday(Field):
             self.value = datetime.strptime(value, "%d.%m.%Y").date()
         except ValueError:
             raise ValueError("Invalid date format. Use DD.MM.YYYY")
+
+    def to_dict(self):
+        return self.value.strftime("%d.%m.%Y")
+
+    @classmethod
+    def from_dict(cls, value_str):
+        return cls(value_str)
+
+    def __str__(self):
+        return self.value.strftime("%d.%m.%Y")
 
 
 class Record:
@@ -80,6 +93,22 @@ class Record:
             birthday_info = f", birthday: {birthday_str}"
         return f"Contact name: {self.name.value}, {phones}{birthday_info}"
 
+    def to_dict(self):
+        return {
+            "name": self.name.value,
+            "phones": [p.value for p in self.phones],
+            "birthday": self.birthday.to_dict() if self.birthday else None
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        record = cls(data["name"])
+        for phone_number in data["phones"]:
+            record.add_phone(phone_number)
+        if data["birthday"]:
+            record.add_birthday(Birthday.from_dict(data["birthday"]))
+        return record
+
 
 class AddressBook(UserDict):
     def add_record(self, record: Record):
@@ -118,6 +147,17 @@ class AddressBook(UserDict):
                     )
         return upcoming_birthdays
 
+    def to_dict(self):
+        return {name: record.to_dict() for name, record in self.data.items()}
+
+    @classmethod
+    def from_dict(cls, data):
+        book = cls()
+        for name, record_dict in data.items():
+            record = Record.from_dict(record_dict)
+            book.add_record(record)
+        return book
+
 
 def input_error(func):
     @functools.wraps(func)
@@ -127,11 +167,11 @@ def input_error(func):
         except ValueError as e:
             return str(e)
         except KeyError:
-            return "Contact not found."
+            return "Contact or Note not found."
         except AttributeError:
             return "Contact not found."
         except IndexError:
-            return "Give me name and phone please."
+            return "Invalid number of arguments."
     return inner
 
 
@@ -204,21 +244,86 @@ def birthdays(_, book: AddressBook):
         result += f"Congratulate {birthday_info['name']} on {congrats_date}\n"
     return result.strip()
 
-def save_data(book, filename="addressbook.pkl"):
-    with open(filename, "wb") as f:
-        pickle.dump(book, f)
+
+@input_error
+def add_note(args, notebook: NoteBook):
+    text = ' '.join(args)
+    if not text:
+        raise IndexError("Please provide text for the note.")
+    note = Note(text)
+    return notebook.add_note(note)
 
 
-def load_data(filename="addressbook.pkl"):
+def show_notes(_, notebook: NoteBook):
+    if not notebook.data:
+        return "No notes found."
+    return "\n".join(str(note) for note in notebook.data.values())
+
+
+@input_error
+def find_notes(args, notebook: NoteBook):
+    search_text = ' '.join(args)
+    if not search_text:
+        raise IndexError("Please provide search text.")
+    found_notes = notebook.find_notes(search_text)
+    if not found_notes:
+        return "No notes found matching your query."
+    return "\n".join(str(note) for note in found_notes)
+
+
+@input_error
+def edit_note(args, notebook: NoteBook):
+    if len(args) < 2:
+        raise IndexError("Please provide note ID and new text.")
+    note_id_str, *new_text_parts = args
     try:
-        with open(filename, "rb") as f:
-            return pickle.load(f)
-    except FileNotFoundError:
-        return AddressBook()
+        note_id = int(note_id_str)
+    except ValueError:
+        return "Note ID must be a number."
+    new_text = ' '.join(new_text_parts)
+    if not new_text:
+        raise IndexError("Please provide new text for the note.")
+    return notebook.edit_note(note_id, new_text)
+
+
+@input_error
+def delete_note(args, notebook: NoteBook):
+    if not args:
+        raise IndexError("Please provide a note ID.")
+    note_id_str, *_ = args
+    try:
+        note_id = int(note_id_str)
+    except ValueError:
+        return "Note ID must be a number."
+    return notebook.delete_note(note_id)
+
+
+def save_data(book, notebook):
+    with open(ADDRESS_BOOK_PATH, "w") as f:
+        json.dump(book.to_dict(), f, indent=4)
+    with open(NOTE_BOOK_PATH, "w") as f:
+        json.dump(notebook.to_dict(), f, indent=4)
+
+
+def load_data():
+    try:
+        with open(ADDRESS_BOOK_PATH, "r") as f:
+            book_data = json.load(f)
+            book = AddressBook.from_dict(book_data)
+    except (FileNotFoundError, json.JSONDecodeError):
+        book = AddressBook()
+
+    try:
+        with open(NOTE_BOOK_PATH, "r") as f:
+            notebook_data = json.load(f)
+            notebook = NoteBook.from_dict(notebook_data)
+    except (FileNotFoundError, json.JSONDecodeError):
+        notebook = NoteBook()
+    return book, notebook
 
 
 def main():
-    book = load_data()
+    book, notebook = load_data()
 
     command_map = {
         "hello": lambda *_: "How can I help you?",
@@ -229,6 +334,11 @@ def main():
         "add-birthday": add_birthday,
         "show-birthday": show_birthday,
         "birthdays": lambda args, book: birthdays(args, book),
+        "add-note": lambda args, book: add_note(args, notebook),
+        "show-notes": lambda args, book: show_notes(args, notebook),
+        "find-notes": lambda args, book: find_notes(args, notebook),
+        "edit-note": lambda args, book: edit_note(args, notebook),
+        "delete-note": lambda args, book: delete_note(args, notebook),
     }
 
     print("Welcome to the assistant bot!")
@@ -240,8 +350,7 @@ def main():
 
         if command in ["close", "exit"]:
             print("Good bye!")
-            save_data(book)
-            
+            save_data(book, notebook)
             break
         elif command in command_map:
             print(command_map[command](args, book))

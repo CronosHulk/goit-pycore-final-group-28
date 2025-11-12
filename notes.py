@@ -5,9 +5,13 @@ import json
 
 class Note:
     def __init__(self, text, tags=None):
-        words = text.split()
-        self.tags = [word for word in words if word.startswith('#')]
-        self.text = ' '.join([word for word in words if not word.startswith('#')])
+        if tags is None:
+            words = text.split()
+            self.tags = [word for word in words if word.startswith('#')]
+            self.text = ' '.join([word for word in words if not word.startswith('#')])
+        else:
+            self.text = text
+            self.tags = tags
         self.id = None
         self.created = datetime.now()
 
@@ -31,10 +35,10 @@ class Note:
 
     @classmethod
     def from_dict(cls, data):
-        note = cls(data["text"])
+        # Передаем текст и теги напрямую, минуя парсинг в __init__
+        note = cls(data["text"], data["tags"])
         note.id = data["id"]
         note.created = datetime.strptime(data["created"], '%Y-%m-%d %H:%M:%S')
-        note.tags = data["tags"]
         return note
 
 
