@@ -25,7 +25,7 @@ class Note:
         return {
             "id": self.id,
             "text": self.text,
-            "created": self.created.isoformat(),
+            "created": self.created.strftime('%Y-%m-%d %H:%M:%S'),
             "tags": self.tags
         }
 
@@ -33,7 +33,7 @@ class Note:
     def from_dict(cls, data):
         note = cls(data["text"])
         note.id = data["id"]
-        note.created = datetime.fromisoformat(data["created"])
+        note.created = datetime.strptime(data["created"], '%Y-%m-%d %H:%M:%S')
         note.tags = data["tags"]
         return note
 
