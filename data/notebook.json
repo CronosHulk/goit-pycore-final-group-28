@@ -1,0 +1,30 @@
+{
+    "next_id": 4,
+    "notes": {
+        "1": {
+            "id": 1,
+            "text": "some note",
+            "created": "2025-11-12 13:27:59",
+            "tags": [
+                "#tag1"
+            ]
+        },
+        "2": {
+            "id": 2,
+            "text": "some another note",
+            "created": "2025-11-12 13:28:40",
+            "tags": [
+                "#tag2"
+            ]
+        },
+        "3": {
+            "id": 3,
+            "text": "test note",
+            "created": "2025-11-12 13:44:07",
+            "tags": [
+                "#test1",
+                "#test3"
+            ]
+        }
+    }
+}
