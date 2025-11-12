@@ -35,7 +35,6 @@ class Note:
 
     @classmethod
     def from_dict(cls, data):
-        # Передаем текст и теги напрямую, минуя парсинг в __init__
         note = cls(data["text"], data["tags"])
         note.id = data["id"]
         note.created = datetime.strptime(data["created"], '%Y-%m-%d %H:%M:%S')
