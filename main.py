@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import json
 import functools
 
-from config import ADDRESS_BOOK_PATH, NOTE_BOOK_PATH
+from config import DATA_FILE
 from notes import Note, NoteBook
 
 
@@ -176,9 +176,10 @@ def input_error(func):
 
 
 def parse_input(user_input):
-    cmd, *args = user_input.split()
-    cmd = cmd.strip().lower()
-    return cmd, *args
+    parts = user_input.split()
+    cmd = parts[0].lower()
+    args = parts[1:]
+    return cmd, args
 
 
 @input_error
@@ -297,30 +298,30 @@ def delete_note(args, notebook: NoteBook):
         return "Note ID must be a number."
     return notebook.delete_note(note_id)
 
-
 def save_data(book, notebook):
-    with open(ADDRESS_BOOK_PATH, "w") as f:
-        json.dump(book.to_dict(), f, indent=4)
-    with open(NOTE_BOOK_PATH, "w") as f:
-        json.dump(notebook.to_dict(), f, indent=4)
+    data = {
+        "contacts": book.to_dict(),
+        "notes": notebook.to_dict(),
+    }
 
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
 def load_data():
     try:
-        with open(ADDRESS_BOOK_PATH, "r") as f:
-            book_data = json.load(f)
-            book = AddressBook.from_dict(book_data)
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        book = AddressBook()
+        # если файла нет или он битый — создаём пустые структуры
+        return AddressBook(), NoteBook()
 
-    try:
-        with open(NOTE_BOOK_PATH, "r") as f:
-            notebook_data = json.load(f)
-            notebook = NoteBook.from_dict(notebook_data)
-    except (FileNotFoundError, json.JSONDecodeError):
-        notebook = NoteBook()
+    book_data = data.get("contacts", {})
+    notes_data = data.get("notes", {})
+
+    book = AddressBook.from_dict(book_data)
+    notebook = NoteBook.from_dict(notes_data)
+
     return book, notebook
-
 
 def main():
     book, notebook = load_data()
@@ -339,6 +340,7 @@ def main():
         "find-notes": lambda args, book: find_notes(args, notebook),
         "edit-note": lambda args, book: edit_note(args, notebook),
         "delete-note": lambda args, book: delete_note(args, notebook),
+        "help": lambda args, book: help_command(),
     }
 
     print("Welcome to the assistant bot!")
@@ -346,7 +348,7 @@ def main():
         user_input = input("Enter a command: ")
         if not user_input:
             continue
-        command, *args = parse_input(user_input)
+        command, args = parse_input(user_input)
 
         if command in ["close", "exit"]:
             print("Good bye!")
@@ -356,6 +358,34 @@ def main():
             print(command_map[command](args, book))
         else:
             print("Invalid command.")
+
+def help_command(*args):
+    return (
+        "Доступні команди:\n"
+        "\n"
+        "Контакти:\n"
+        "  add <ім'я> <телефон>                - Додати контакт або телефон\n"
+        "  change <ім'я> <старий> <новий>      - Змінити телефон\n"
+        "  phone <ім'я>                        - Показати телефони контакту\n"
+        "  all                                 - Показати всі контакти\n"
+        "  delete <ім'я>                       - Видалити контакт\n"
+        "\n"
+        "Дні народження:\n"
+        "  add-birthday <ім'я> <дата>          - Додати день народження\n"
+        "  show-birthday <ім'я>                - Показати день народження\n"
+        "  birthdays [днів]                    - Показати дні народження в найближчі N днів\n"
+        "\n"
+        "Нотатки:\n"
+        "  add-note <текст>                    - Додати нотатку\n"
+        "  show-notes                           - Показати всі нотатки\n"
+        "  find-notes <запит>                   - Пошук нотаток\n"
+        "  edit-note <ID> <новий текст>        - Редагувати нотатку\n"
+        "  delete-note <ID>                    - Видалити нотатку\n"
+        "\n"
+        "Системні:\n"
+        "  help                                - Показати це меню\n"
+        "  exit / close                        - Вийти з програми\n"
+    )
 
 
 if __name__ == "__main__":
