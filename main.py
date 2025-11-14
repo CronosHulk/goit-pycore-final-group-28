@@ -49,10 +49,12 @@ class Birthday(Field):
 
 
 class Record:
-    def __init__(self, name):
+    def __init__(self, name, email=None, address=None):
         self.name = Name(name)
         self.phones = []
         self.birthday = None
+        self.email = email
+        self.address = address
 
     def add_phone(self, phone_number):
         self.phones.append(Phone(phone_number))
@@ -84,6 +86,24 @@ class Record:
             if phone.value == phone_number:
                 return phone
         return None
+    
+    def set_email(self, email_str):
+        if email_str and isinstance(email_str, str) and "@" in email_str:
+            self.email = email_str
+        else:
+            raise ValueError("Invalid email provided.")
+
+    def set_address(self, address_str):
+        if address_str and isinstance(address_str, str):
+            self.address = address_str
+        else:
+            raise ValueError("Invalid address provided.")
+
+    def edit_email(self, new_email):
+        self.set_email(new_email)
+
+    def edit_address(self, new_address):
+        self.set_address(new_address)
 
     def __str__(self):
         phones = f"phones: {'; '.join(p.value for p in self.phones)}"
@@ -91,21 +111,25 @@ class Record:
         if self.birthday:
             birthday_str = self.birthday.value.strftime('%d.%m.%Y')
             birthday_info = f", birthday: {birthday_str}"
-        return f"Contact name: {self.name.value}, {phones}{birthday_info}"
+        email_info = f", email: {self.email}" if self.email else ""
+        address_info = f", address: {self.address}" if self.address else ""
+        return f"Contact name: {self.name.value}, {phones}{birthday_info}{email_info}{address_info}"
 
     def to_dict(self):
         return {
             "name": self.name.value,
             "phones": [p.value for p in self.phones],
-            "birthday": self.birthday.to_dict() if self.birthday else None
+            "birthday": self.birthday.to_dict() if self.birthday else None,
+            "email": self.email,
+            "address": self.address
         }
 
     @classmethod
     def from_dict(cls, data):
-        record = cls(data["name"])
-        for phone_number in data["phones"]:
+        record = cls(data["name"], email=data.get("email"), address=data.get("address"))
+        for phone_number in data.get("phones", []):
             record.add_phone(phone_number)
-        if data["birthday"]:
+        if data.get("birthday"):
             record.add_birthday(Birthday.from_dict(data["birthday"]))
         return record
 
@@ -157,6 +181,26 @@ class AddressBook(UserDict):
             record = Record.from_dict(record_dict)
             book.add_record(record)
         return book
+    
+    def search(self, query):
+        q = str(query).lower()
+        results = []
+        for rec in self.data.values():
+            if q in rec.name.value.lower():
+                results.append(rec)
+                continue
+            if rec.email and q in rec.email.lower():
+                results.append(rec)
+                continue
+            if rec.address and q in rec.address.lower():
+                results.append(rec)
+                continue
+            for p in rec.phones:
+                if q in p.value:
+                    results.append(rec)
+                    break
+        return results
+
 
 
 def input_error(func):
@@ -184,7 +228,24 @@ def parse_input(user_input):
 
 @input_error
 def add_contact(args, book: AddressBook):
-    name, phone, *_ = args
+    if not args:
+        raise IndexError("Provide at least a name.")
+    name = args[0]
+    phone = None
+    email = None
+    address = None
+    rest = args[1:]
+    addr_parts = []
+    for token in rest:
+        if not phone and token.isdigit() and len(token) == 10:
+            phone = token
+            continue
+        if not email and "@" in token and "." in token:
+            email = token
+            continue
+        addr_parts.append(token)
+    if addr_parts:
+        address = " ".join(addr_parts) if addr_parts else None
     record = book.find(name)
     message = "Contact updated."
     if record is None:
@@ -193,15 +254,37 @@ def add_contact(args, book: AddressBook):
         message = "Contact added."
     if phone:
         record.add_phone(phone)
+    if email:
+        record.set_email(email)
+    if address:
+        record.set_address(address)
     return message
 
 
 @input_error
 def change_contact(args, book: AddressBook):
-    name, old_phone, new_phone, *_ = args
-    record = book.find(name)
-    record.edit_phone(old_phone, new_phone)
-    return "Contact updated."
+    if len(args) < 3:
+        raise IndexError("Not enough arguments for change.")
+    name = args[0]
+    field = args[1].lower()
+    rec = book.find(name)
+    if field == "phone":
+        if len(args) < 4:
+            raise IndexError("Phone change requires old and new numbers.")
+        old_phone = args[2]
+        new_phone = args[3]
+        rec.edit_phone(old_phone, new_phone)
+        return "Phone updated."
+    elif field == "email":
+        new_email = args[2]
+        rec.edit_email(new_email)
+        return "Email updated."
+    elif field == "address":
+        new_address = " ".join(args[2:])
+        rec.edit_address(new_address)
+        return "Address updated."
+    else:
+        raise ValueError("Unknown field. Use 'phone', 'email' or 'address'.")
 
 
 @input_error
@@ -234,16 +317,63 @@ def show_birthday(args, book: AddressBook):
     return "Birthday not set for this contact."
 
 
-def birthdays(_, book: AddressBook):
-    upcoming = book.get_upcoming_birthdays()
-    if not upcoming:
-        return "No upcoming birthdays in the next week."
+@input_error
+def birthdays(args, book: AddressBook):
+    days = 7
+    if args:
+        days_str = args[0]
+        try:
+            days = int(days_str)
+        except ValueError:
+            raise ValueError("Days must be a positive integer.")
+        if days <= 0:
+            raise ValueError("Days must be a positive integer.")
 
-    result = "Upcoming birthdays:\n"
+    upcoming = book.get_upcoming_birthdays(days=days)
+
+    if not upcoming:
+        return f"No upcoming birthdays in the next {days} days."
+
+    result_lines = [f"Upcoming birthdays in the next {days} days:"]
     for birthday_info in upcoming:
-        congrats_date = birthday_info['congratulation_date']
-        result += f"Congratulate {birthday_info['name']} on {congrats_date}\n"
-    return result.strip()
+        congrats_date = birthday_info["congratulation_date"]
+        result_lines.append(
+            f"Congratulate {birthday_info['name']} on {congrats_date}"
+        )
+    return "\n".join(result_lines)
+
+@input_error
+def add_email(args, book: AddressBook):        
+    name, email, *_ = args
+    rec = book.find(name)
+    rec.set_email(email)
+    return "Email set."
+
+@input_error
+def add_address(args, book: AddressBook):
+    if len(args) < 2:
+        raise IndexError("Provide name and address.")
+    name = args[0]
+    address = " ".join(args[1:])
+    rec = book.find(name)
+    rec.set_address(address)
+    return "Address set."
+
+@input_error
+def delete_contact(args, book: AddressBook):
+    name, *_ = args
+    book.delete(name)
+    return "Contact deleted."
+
+@input_error
+def find_contact(args, book: AddressBook):
+    if not args:
+        raise IndexError("Provide search query.")
+    query = " ".join(args)
+    results = book.search(query)
+    if not results:
+        return "No contacts found."
+    return "\n".join(str(r) for r in results)
 
 
 @input_error
@@ -341,6 +471,10 @@ def main():
         "edit-note": lambda args, book: edit_note(args, notebook),
         "delete-note": lambda args, book: delete_note(args, notebook),
         "help": lambda args, book: help_command(),
+        "add-email": lambda args, book: add_email(args, book),
+        "add-address": lambda args, book: add_address(args, book),
+        "delete-contact": lambda args, book: delete_contact(args, book),
+        "find-contact": lambda args, book: find_contact(args, book),
     }
 
     print("Welcome to the assistant bot!")
@@ -364,27 +498,38 @@ def help_command(*args):
         "Доступні команди:\n"
         "\n"
         "Контакти:\n"
-        "  add <ім'я> <телефон>                - Додати контакт або телефон\n"
-        "  change <ім'я> <старий> <новий>      - Змінити телефон\n"
-        "  phone <ім'я>                        - Показати телефони контакту\n"
-        "  all                                 - Показати всі контакти\n"
-        "  delete <ім'я>                       - Видалити контакт\n"
+        "  add <ім'я> [телефон] [email] [address] - Додати контакт або доповнити\n"
+        "  change <ім'я> phone <старий> <новий>   - Змінити телефон\n"
+        "  delete-contact <ім'я>                  - Видалити контакт\n"
+        "  find-contact <запит>                   - Пошук по імені/тел/емейл/адресі\n"
+        "  phone <ім'я>                           - Показати телефони контакту\n"
+        "  all                                    - Показати всі контакти\n"
+        "\n"
+        "email:\n"
+         "  add-email <ім'я> <email>               - Додати email\n"
+         "  change <ім'я> email <new_email>        - Змінити email\n"
+
+         "\n"
+        "Адреси:\n"
+        "  add-address <ім'я> <address>           - Додати адресу\n"
+        "  change <ім'я> address <new address>    - Змінити адресу\n"
+
         "\n"
         "Дні народження:\n"
-        "  add-birthday <ім'я> <дата>          - Додати день народження\n"
-        "  show-birthday <ім'я>                - Показати день народження\n"
-        "  birthdays [днів]                    - Показати дні народження в найближчі N днів\n"
+        "  add-birthday <ім'я> <дата>             - Додати день народження\n"
+        "  show-birthday <ім'я>                   - Показати день народження\n"
+        "  birthdays [днів]                       - Показати дні народження в найближчі N днів\n"
         "\n"
         "Нотатки:\n"
-        "  add-note <текст>                    - Додати нотатку\n"
-        "  show-notes                           - Показати всі нотатки\n"
-        "  find-notes <запит>                   - Пошук нотаток\n"
-        "  edit-note <ID> <новий текст>        - Редагувати нотатку\n"
-        "  delete-note <ID>                    - Видалити нотатку\n"
+        "  add-note <текст>                       - Додати нотатку\n"
+        "  show-notes                              - Показати всі нотатки\n"
+        "  find-notes <запит>                      - Пошук нотаток\n"
+        "  edit-note <ID> <новий текст>           - Редагувати нотатку\n"
+        "  delete-note <ID>                        - Видалити нотатку\n"
         "\n"
         "Системні:\n"
-        "  help                                - Показати це меню\n"
-        "  exit / close                        - Вийти з програми\n"
+        "  help                                   - Показати це меню\n"
+        "  exit / close                           - Вийти з програми\n"
     )
 
 
