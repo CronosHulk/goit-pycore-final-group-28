@@ -2,6 +2,7 @@ from collections import UserDict
 from datetime import datetime, timedelta
 import json
 import functools
+import re # для первірки формату імейлу
 
 from config import DATA_FILE
 from notes import Note, NoteBook
@@ -29,6 +30,20 @@ class Phone(Field):
             )
         super().__init__(value)
 
+#додано класс email
+class Email(Field):
+    def __init__(self, value):
+        pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$"
+        if not re.match(pattern,value):
+            raise ValueError("Invalid email format")
+        super().__init__(value)
+
+#додано класс Address
+class Address(Field):
+    def __init__(self, value):
+        if not value or not isinstance(value, str):
+            raise ValueError("Address must be a non-empty string")
+        super().__init__(value)
 
 class Birthday(Field):
     def __init__(self, value):
@@ -64,6 +79,21 @@ class Record:
             self.birthday = Birthday(birthday)
         elif isinstance(birthday, Birthday):
             self.birthday = birthday
+
+    #метод для додавання імейлу
+    def add_email(self,email): 
+        if isinstance(email,str):
+            self.email= Email (email)
+        elif isinstance (email,Email):
+            self.email=email
+    
+    #метод для додавання адресси
+    def add_address (self, address):
+        if isinstance(address,str):
+            self.address=address
+        elif isinstance(address,Address):
+            self.address=address
+
 
     def remove_phone(self, phone_number):
         phone_to_remove = self.find_phone(phone_number)
@@ -111,17 +141,17 @@ class Record:
         if self.birthday:
             birthday_str = self.birthday.value.strftime('%d.%m.%Y')
             birthday_info = f", birthday: {birthday_str}"
-        email_info = f", email: {self.email}" if self.email else ""
-        address_info = f", address: {self.address}" if self.address else ""
-        return f"Contact name: {self.name.value}, {phones}{birthday_info}{email_info}{address_info}"
+        email_info = f", email: {self.email.value}" if self.email else "" #додала email 
+        address_info = f", address: {self.address.value}" if self.address else "" #додала адресу
+        return f"Contact name: {self.name.value}, {phones}{birthday_info}, {email_info}, {address_info}"
 
     def to_dict(self):
         return {
             "name": self.name.value,
             "phones": [p.value for p in self.phones],
             "birthday": self.birthday.to_dict() if self.birthday else None,
-            "email": self.email,
-            "address": self.address
+            "email": self.email.value if self.email else None,
+            "address": self.address.value if self.address else None
         }
 
     @classmethod
@@ -131,6 +161,10 @@ class Record:
             record.add_phone(phone_number)
         if data.get("birthday"):
             record.add_birthday(Birthday.from_dict(data["birthday"]))
+        if data.get("email"): #додала імейл в класс
+            record.add_email(Email(data["email"])) 
+        if data.get("address"): #додала адрессу в класс
+            record.add_address(Address(data["address"]))
         return record
 
 
