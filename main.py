@@ -1,240 +1,12 @@
-from collections import UserDict
-from datetime import datetime, timedelta
+# -*- coding: utf-8 -*-
 import json
 import functools
-import re # для первірки формату імейлу
+import sys
+import io
 
 from config import DATA_FILE
 from notes import Note, NoteBook
-
-
-class Field:
-    def __init__(self, value):
-        self.value = value
-
-    def __str__(self):
-        return str(self.value)
-
-
-class Name(Field):
-    pass
-
-
-class Phone(Field):
-    def __init__(self, value):
-        if not (
-            isinstance(value, str) and value.isdigit() and len(value) == 10
-        ):
-            raise ValueError(
-                "Phone number must be a 10-digit string of numbers."
-            )
-        super().__init__(value)
-
-#додано класс email
-class Email(Field):
-    def __init__(self, value):
-        pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$"
-        if not re.match(pattern,value):
-            raise ValueError("Invalid email format")
-        super().__init__(value)
-
-#додано класс Address
-class Address(Field):
-    def __init__(self, value):
-        if not value or not isinstance(value, str):
-            raise ValueError("Address must be a non-empty string")
-        super().__init__(value)
-
-class Birthday(Field):
-    def __init__(self, value):
-        try:
-            self.value = datetime.strptime(value, "%d.%m.%Y").date()
-        except ValueError:
-            raise ValueError("Invalid date format. Use DD.MM.YYYY")
-
-    def to_dict(self):
-        return self.value.strftime("%d.%m.%Y")
-
-    @classmethod
-    def from_dict(cls, value_str):
-        return cls(value_str)
-
-    def __str__(self):
-        return self.value.strftime("%d.%m.%Y")
-
-
-class Record:
-    def __init__(self, name, email=None, address=None):
-        self.name = Name(name)
-        self.phones = []
-        self.birthday = None
-        self.email = email
-        self.address = address
-
-    def add_phone(self, phone_number):
-        self.phones.append(Phone(phone_number))
-
-    def add_birthday(self, birthday):
-        if isinstance(birthday, str):
-            self.birthday = Birthday(birthday)
-        elif isinstance(birthday, Birthday):
-            self.birthday = birthday
-
-    #метод для додавання імейлу
-    def add_email(self,email): 
-        if isinstance(email,str):
-            self.email= Email (email)
-        elif isinstance (email,Email):
-            self.email=email
-    
-    #метод для додавання адресси
-    def add_address (self, address):
-        if isinstance(address,str):
-            self.address=address
-        elif isinstance(address,Address):
-            self.address=address
-
-
-    def remove_phone(self, phone_number):
-        phone_to_remove = self.find_phone(phone_number)
-        if phone_to_remove:
-            self.phones.remove(phone_to_remove)
-        else:
-            raise ValueError(f"Phone number {phone_number} not found.")
-
-    def edit_phone(self, old_phone_number, new_phone_number):
-        phone_to_edit = self.find_phone(old_phone_number)
-        if phone_to_edit:
-            phone_to_edit.value = Phone(new_phone_number).value
-        else:
-            raise ValueError(
-                f"Phone number {old_phone_number} not found."
-            )
-
-    def find_phone(self, phone_number):
-        for phone in self.phones:
-            if phone.value == phone_number:
-                return phone
-        return None
-    
-    def set_email(self, email_str):
-        if email_str and isinstance(email_str, str) and "@" in email_str:
-            self.email = email_str
-        else:
-            raise ValueError("Invalid email provided.")
-
-    def set_address(self, address_str):
-        if address_str and isinstance(address_str, str):
-            self.address = address_str
-        else:
-            raise ValueError("Invalid address provided.")
-
-    def edit_email(self, new_email):
-        self.set_email(new_email)
-
-    def edit_address(self, new_address):
-        self.set_address(new_address)
-
-    def __str__(self):
-        phones = f"phones: {'; '.join(p.value for p in self.phones)}"
-        birthday_info = ""
-        if self.birthday:
-            birthday_str = self.birthday.value.strftime('%d.%m.%Y')
-            birthday_info = f", birthday: {birthday_str}"
-        email_info = f", email: {self.email.value}" if self.email else "" #додала email 
-        address_info = f", address: {self.address.value}" if self.address else "" #додала адресу
-        return f"Contact name: {self.name.value}, {phones}{birthday_info}, {email_info}, {address_info}"
-
-    def to_dict(self):
-        return {
-            "name": self.name.value,
-            "phones": [p.value for p in self.phones],
-            "birthday": self.birthday.to_dict() if self.birthday else None,
-            "email": self.email.value if self.email else None,
-            "address": self.address.value if self.address else None
-        }
-
-    @classmethod
-    def from_dict(cls, data):
-        record = cls(data["name"], email=data.get("email"), address=data.get("address"))
-        for phone_number in data.get("phones", []):
-            record.add_phone(phone_number)
-        if data.get("birthday"):
-            record.add_birthday(Birthday.from_dict(data["birthday"]))
-        if data.get("email"): #додала імейл в класс
-            record.add_email(Email(data["email"])) 
-        if data.get("address"): #додала адрессу в класс
-            record.add_address(Address(data["address"]))
-        return record
-
-
-class AddressBook(UserDict):
-    def add_record(self, record: Record):
-        self.data[record.name.value] = record
-
-    def find(self, name):
-        return self.data.get(name)
-
-    def delete(self, name):
-        if name in self.data:
-            del self.data[name]
-
-    def get_upcoming_birthdays(self, days=7):
-        today = datetime.today().date()
-        upcoming_birthdays = []
-
-        for record in self.data.values():
-            if record.birthday:
-                bday = record.birthday.value
-                birthday_this_year = bday.replace(year=today.year)
-
-                delta_days = (birthday_this_year - today).days
-
-                if 0 <= delta_days <= days:
-                    congratulation_date = birthday_this_year
-                    if congratulation_date.weekday() >= 5:
-                        days_to_monday = 7 - congratulation_date.weekday()
-                        congratulation_date += timedelta(days=days_to_monday)
-
-                    con_date_str = congratulation_date.strftime("%d.%m.%Y")
-                    upcoming_birthdays.append(
-                        {
-                            "name": record.name.value,
-                            "congratulation_date": con_date_str,
-                        }
-                    )
-        return upcoming_birthdays
-
-    def to_dict(self):
-        return {name: record.to_dict() for name, record in self.data.items()}
-
-    @classmethod
-    def from_dict(cls, data):
-        book = cls()
-        for name, record_dict in data.items():
-            record = Record.from_dict(record_dict)
-            book.add_record(record)
-        return book
-    
-    def search(self, query):
-        q = str(query).lower()
-        results = []
-        for rec in self.data.values():
-            if q in rec.name.value.lower():
-                results.append(rec)
-                continue
-            if rec.email and q in rec.email.lower():
-                results.append(rec)
-                continue
-            if rec.address and q in rec.address.lower():
-                results.append(rec)
-                continue
-            for p in rec.phones:
-                if q in p.value:
-                    results.append(rec)
-                    break
-        return results
-
+from models import AddressBook, Record
 
 
 def input_error(func):
@@ -250,6 +22,7 @@ def input_error(func):
             return "Contact not found."
         except IndexError:
             return "Invalid number of arguments."
+
     return inner
 
 
@@ -376,12 +149,14 @@ def birthdays(args, book: AddressBook):
         )
     return "\n".join(result_lines)
 
+
 @input_error
-def add_email(args, book: AddressBook):        
+def add_email(args, book: AddressBook):
     name, email, *_ = args
     rec = book.find(name)
     rec.set_email(email)
     return "Email set."
+
 
 @input_error
 def add_address(args, book: AddressBook):
@@ -393,11 +168,13 @@ def add_address(args, book: AddressBook):
     rec.set_address(address)
     return "Address set."
 
+
 @input_error
 def delete_contact(args, book: AddressBook):
     name, *_ = args
     book.delete(name)
     return "Contact deleted."
+
 
 @input_error
 def find_contact(args, book: AddressBook):
@@ -415,6 +192,7 @@ def add_note(args, notebook: NoteBook):
     text = ' '.join(args)
     if not text:
         raise IndexError("Please provide text for the note.")
+
     note = Note(text)
     return notebook.add_note(note)
 
@@ -445,9 +223,11 @@ def edit_note(args, notebook: NoteBook):
         note_id = int(note_id_str)
     except ValueError:
         return "Note ID must be a number."
+
     new_text = ' '.join(new_text_parts)
     if not new_text:
         raise IndexError("Please provide new text for the note.")
+
     return notebook.edit_note(note_id, new_text)
 
 
@@ -462,6 +242,7 @@ def delete_note(args, notebook: NoteBook):
         return "Note ID must be a number."
     return notebook.delete_note(note_id)
 
+
 def save_data(book, notebook):
     data = {
         "contacts": book.to_dict(),
@@ -470,6 +251,7 @@ def save_data(book, notebook):
 
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
+
 
 def load_data():
     try:
@@ -487,7 +269,51 @@ def load_data():
 
     return book, notebook
 
+
+def help_command(*args):
+    return (
+        "Доступні команди:\n"
+        "\n"
+        "Контакти:\n"
+        "  add <ім'я> [телефон] [email] [address] - Додати контакт або доповнити\n"
+        "  change <ім'я> phone <старий> <новий>   - Змінити телефон\n"
+        "  delete-contact <ім'я>                  - Видалити контакт\n"
+        "  find-contact <запит>                   - Пошук по імені/тел/емейл/адресі\n"
+        "  phone <ім'я>                           - Показати телефони контакту\n"
+        "  all                                    - Показати всі контакти\n"
+        "\n"
+        "Email:\n"
+        "  add-email <ім'я> <email>               - Додати email\n"
+        "  change <ім'я> email <new_email>        - Змінити email\n"
+        "\n"
+        "Адреси:\n"
+        "  add-address <ім'я> <address>           - Додати адресу\n"
+        "  change <ім'я> address <new address>    - Змінити адресу\n"
+        "\n"
+        "Дні народження:\n"
+        "  add-birthday <ім'я> <дата>             - Додати день народження\n"
+        "  show-birthday <ім'я>                   - Показати день народження\n"
+        "  birthdays [днів]                       - Показати дні народження в найближчі N днів\n"
+        "\n"
+        "Нотатки:\n"
+        "  add-note <текст>                       - Додати нотатку\n"
+        "  show-notes                              - Показати всі нотатки\n"
+        "  find-notes <запит>                      - Пошук нотаток\n"
+        "  edit-note <ID> <новий текст>           - Редагувати нотатку\n"
+        "  delete-note <ID>                        - Видалити нотатку\n"
+        "\n"
+        "Системні:\n"
+        "  help                                   - Показати це меню\n"
+        "  exit / close                           - Вийти з програми\n"
+    )
+
+
 def main():
+    # Встановлюємо UTF-8 кодування для введення/виведення
+    if sys.platform.startswith('win'):
+        sys.stdin.reconfigure(encoding='utf-8')
+        sys.stdout.reconfigure(encoding='utf-8')
+
     book, notebook = load_data()
 
     command_map = {
@@ -526,45 +352,6 @@ def main():
             print(command_map[command](args, book))
         else:
             print("Invalid command.")
-
-def help_command(*args):
-    return (
-        "Доступні команди:\n"
-        "\n"
-        "Контакти:\n"
-        "  add <ім'я> [телефон] [email] [address] - Додати контакт або доповнити\n"
-        "  change <ім'я> phone <старий> <новий>   - Змінити телефон\n"
-        "  delete-contact <ім'я>                  - Видалити контакт\n"
-        "  find-contact <запит>                   - Пошук по імені/тел/емейл/адресі\n"
-        "  phone <ім'я>                           - Показати телефони контакту\n"
-        "  all                                    - Показати всі контакти\n"
-        "\n"
-        "email:\n"
-         "  add-email <ім'я> <email>               - Додати email\n"
-         "  change <ім'я> email <new_email>        - Змінити email\n"
-
-         "\n"
-        "Адреси:\n"
-        "  add-address <ім'я> <address>           - Додати адресу\n"
-        "  change <ім'я> address <new address>    - Змінити адресу\n"
-
-        "\n"
-        "Дні народження:\n"
-        "  add-birthday <ім'я> <дата>             - Додати день народження\n"
-        "  show-birthday <ім'я>                   - Показати день народження\n"
-        "  birthdays [днів]                       - Показати дні народження в найближчі N днів\n"
-        "\n"
-        "Нотатки:\n"
-        "  add-note <текст>                       - Додати нотатку\n"
-        "  show-notes                              - Показати всі нотатки\n"
-        "  find-notes <запит>                      - Пошук нотаток\n"
-        "  edit-note <ID> <новий текст>           - Редагувати нотатку\n"
-        "  delete-note <ID>                        - Видалити нотатку\n"
-        "\n"
-        "Системні:\n"
-        "  help                                   - Показати це меню\n"
-        "  exit / close                           - Вийти з програми\n"
-    )
 
 
 if __name__ == "__main__":
