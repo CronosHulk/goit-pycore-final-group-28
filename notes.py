@@ -15,7 +15,7 @@ class Note:
         self.id = None
         self.created = datetime.now()
 
-    def _extract_tags(self, text):
+    def extract_tags(self, text):
         return [word.strip() for word in text.split() if word.startswith('#')]
 
     def __str__(self):
@@ -64,7 +64,7 @@ class NoteBook(UserDict):
     def edit_note(self, note_id, new_text):
         if note_id in self.data:
             self.data[note_id].text = new_text
-            self.data[note_id].tags = self.data[note_id]._extract_tags(new_text)
+            self.data[note_id].tags = self.data[note_id].extract_tags(new_text)
             return f"Note with ID {note_id} updated."
         raise KeyError(f"Note with ID {note_id} not found.")
 
