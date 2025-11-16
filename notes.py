@@ -6,17 +6,13 @@ import json
 class Note:
     def __init__(self, text, tags=None):
         if tags is None:
-            words = text.split()
-            self.tags = [word for word in words if word.startswith('#')]
-            self.text = ' '.join([word for word in words if not word.startswith('#')])
+            self.tags = self.extract_tags(text)
+            self.text = self.extract_text(text)
         else:
             self.text = text
             self.tags = tags
         self.id = None
         self.created = datetime.now()
-
-    def extract_tags(self, text):
-        return [word.strip() for word in text.split() if word.startswith('#')]
 
     def __str__(self):
         tags_str = ', '.join(self.tags) if self.tags else "No tags"
@@ -24,6 +20,14 @@ class Note:
                 f"Date: {self.created.strftime('%Y-%m-%d %H:%M:%S')}\n"
                 f"Tags: {tags_str}\n"
                 f"Text: {self.text}\n")
+
+    def extract_text(self, text):
+        words = text.split()
+        return ' '.join([word for word in words if not word.startswith('#')])
+
+    def extract_tags(self, text):
+        words = text.split()
+        return [word.strip() for word in words if word.startswith('#')]
 
     def to_dict(self):
         return {
@@ -63,7 +67,7 @@ class NoteBook(UserDict):
 
     def edit_note(self, note_id, new_text):
         if note_id in self.data:
-            self.data[note_id].text = new_text
+            self.data[note_id].text = self.data[note_id].extract_text(new_text)
             self.data[note_id].tags = self.data[note_id].extract_tags(new_text)
             return f"Note with ID {note_id} updated."
         raise KeyError(f"Note with ID {note_id} not found.")
