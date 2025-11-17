@@ -2,7 +2,6 @@
 import json
 import functools
 import sys
-import io
 
 from config import DATA_FILE
 from notes import Note, NoteBook
@@ -316,8 +315,9 @@ def main():
 
     book, notebook = load_data()
 
+    greet = "Welcome to the assistant bot! Enter help to see commands"
     command_map = {
-        "hello": lambda *_: "How can I help you?",
+        "hello": lambda *_: greet,
         "add": add_contact,
         "change": change_contact,
         "phone": show_phone,
